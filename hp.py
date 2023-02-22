@@ -2,6 +2,9 @@
 class hp:
 
     data_root = '../../data/cleaned'
+    n_train_speakers = 20
+    n_test_speakers = 2 # these are the zero-shot speakers
+    data_root = '../../data/cleaned'
     n_train_speakers = 17
     n_test_speakers = 3 # these are the zero-shot speakers
     sampling_rate = 16000
@@ -12,7 +15,7 @@ class hp:
 
     # train settings
     output_path = './outputs/run1/'
-    device = 'cuda'
+    device = 'cpu'
     len_crop = 128
     bs = 4 # 2x that of paper
     n_iters = 100000 #2300000 # much greater than the 100k in the paper
@@ -24,8 +27,8 @@ class hp:
     lr = 1e-4 # according to github issues, no lr schedule is used
 
     seed = 100
-    mel_shift = 12
-    mel_scale = 12
+    mel_shift = None
+    mel_scale = None
 
     fft_length = 1024
     hop_length = 256
