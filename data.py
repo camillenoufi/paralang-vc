@@ -2,9 +2,12 @@ from torch.utils import data
 import torch.nn.functional as F
 import torch
 import numpy as np
+import crepe
+import librosa
 import pickle 
 import os
-from spec_utils import get_mspec
+from spec_utils import get_mspec_from_array
+from hp import hp
 import random
        
 class AutoVCDataset(data.Dataset):
@@ -29,11 +32,24 @@ class AutoVCDataset(data.Dataset):
     def __getitem__(self, index):
         pth = self.paths[index]
         if pth.suffix == '.pt': mspec = torch.load(str(pth)) # (N, n_mels)
-        else: mspec = get_mspec(pth, is_hifigan=True) # (N, n_mels)
-        mspec = self.random_crop(mspec)
+        else: 
+            x, fs = librosa.load(pth, sr=hp.sample_rate)
+            mspec = get_mspec_from_array(x=x, input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
+        mspec, y = self.random_crop(mspec)
         spk_id = pth.parent.stem
         spk_emb = self.spk_embs[spk_id]
         mspec = self.norm_mel(mspec)
+
+        #variables added by Camille:
+        #f0 track
+        step_size = int(1e3*hp.hop_length/hp.sampling_rate) #in ms
+        _, f0, _, _ = crepe.predict(y, fs, viterbi=True, step_size=step_size)
+        #extract RMSE
+        rmse = librosa.feature.rmse(x, frame_length=hp.fft_length, hop_length=hp.hop_length, center=True)
+        #add some sort of assert that the f0 and rmse vectors are the same length as the mspec
+        assert mspec.shape[0] == len(f0)
+        assert mspec.shape[0] == len(rmse)
+
         return mspec, spk_emb
 
     def random_crop(self, mspec):

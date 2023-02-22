@@ -29,7 +29,7 @@ def train(args):
     device = torch.device(hp.device)
 
     if args.mel_path is None:
-        ds_root = Path(hp.data_root)/'wav48_silence_trimmed' 
+        ds_root = Path(hp.data_root) # /subdir if applicable
     else:
         print("[DATA] Using precomputed mels from ", args.mel_path)
         ds_root = Path(args.mel_path)
@@ -54,7 +54,7 @@ def train(args):
     spk_out_path = Path(hp.speaker_embedding_dir)
     spk_embs = {}
     os.makedirs(spk_out_path, exist_ok=True)
-    print("[SPEAKER EMBEDDING] Gathering speaker embeddings")
+    print("[SPEAKER EMBEDDING] Generating speaker embeddings")
     for spk_folder in mb:
         random.seed(hp.seed)
         sample_uttrs = random.sample(list(spk_folder.iterdir()), k=hp.n_uttr_per_spk_embedding)
@@ -80,22 +80,6 @@ def train(args):
     del sse
     torch.cuda.empty_cache()
 
-    # Patch in LJSpeech:
-    if args.lj_path is not None:
-        print("[DATA] Adding LJSpeech")
-        ljpath = Path(args.lj_path)
-        split_folder = [v for v in ljpath.iterdir() if v.is_dir() and 'split' in v.stem]
-        if len(split_folder) != 1: raise AssertionError("Split folder not found.")
-        split_folder = split_folder[0]
-        with open(split_folder/'train.txt', 'r') as f: lj_trn_files = f.readlines()
-        with open(split_folder/'validation.txt', 'r') as f: lj_eval_files = f.readlines()
-
-        lj_trn_files = [ljpath/f"{f.strip()}.wav" for f in lj_trn_files]
-        lj_eval_files = [ljpath/f"{f.strip()}.wav" for f in lj_eval_files]
-        lj_emb = torch.load(ljpath/'lj_sse_emb100.pt').cpu()
-        spk_embs['wavs'] = lj_emb # cheeky hack to make it work nicely with VCTK loader
-        train_files += lj_trn_files
-        test_files += lj_eval_files
 
     print("[DATA] Constructing final dataloaders")
     train_dl = get_loader(train_files, spk_embs, hp.len_crop, hp.bs, 
@@ -105,10 +89,11 @@ def train(args):
 
     print("[LOGGING] Setting up logger")
     writer = tensorboard.writer.SummaryWriter(out_path)
-    keys = ['G/loss_id','G/loss_id_psnt','G/loss_cd']
+    keys = ['G/loss_spec','G/loss_spec_psnt','G/loss_cd']
 
     print("[MODEL] Setting up model")
-    G = Generator(32, 256, 512, 32).to(device)
+    # Generator init params: (dim_neck, dim_emb, dim_pre, dim_pitch, dim_amp, freq)
+    G = Generator(32, 256, 512, 256, 256, 32).to(device)
     opt = torch.optim.Adam(G.parameters(), hp.lr)
     if args.fp16: 
         print("[TRAIN] Using fp16 training.")
@@ -133,44 +118,47 @@ def train(args):
 
         G.train()
         pb = progress_bar(enumerate(train_dl), total=len(train_dl), parent=mb)
-        for i, (x_src, s_src) in pb:
+        for i, (x_src, x_tgt, s_src, f0_src, amp_src) in pb:
             x_src = x_src.to(device)
+            x_tgt = x_tgt.to(device)
             s_src = s_src.to(device)
+            f0_src = f0_src.to(device)
+            amp_src = amp_src.to(device)
             opt.zero_grad()
 
             # fp16 enable
             if args.fp16:
                 with autocast():
-                    # Identity mapping loss
-                    x_identic, x_identic_psnt, code_real = G(x_src, s_src, s_src)
-                    g_loss_id = F.mse_loss(x_src, x_identic.squeeze(1))   
-                    g_loss_id_psnt = F.mse_loss(x_src, x_identic_psnt.squeeze(1))   
+                    # Conversion mapping loss
+                    x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
+                    g_loss_spec = F.mse_loss(x_tgt, x_pred.squeeze(1))   
+                    g_loss_spec_psnt = F.mse_loss(x_tgt, x_pred_psnt.squeeze(1))   
                     
                     # Code semantic loss.
-                    code_reconst = G(x_identic_psnt.squeeze(1), s_src, None)
-                    g_loss_cd = F.l1_loss(code_real, code_reconst)
+                    code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
+                    g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                    g_loss = g_loss_id + hp.mu*g_loss_id_psnt + hp.lamb*g_loss_cd
+                    g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
                 scaler.scale(g_loss).backward()
                 scaler.step(opt)
                 scaler.update()
             else:
-                # Identity mapping loss
-                x_identic, x_identic_psnt, code_real = G(x_src, s_src, s_src)
-                g_loss_id = F.mse_loss(x_src, x_identic.squeeze(1))   
-                g_loss_id_psnt = F.mse_loss(x_src, x_identic_psnt.squeeze(1))   
+                # Conversion mapping loss
+                x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
+                g_loss_spec = F.mse_loss(x_tgt, x_pred.squeeze(1))   
+                g_loss_spec_psnt = F.mse_loss(x_tgt, x_pred_psnt.squeeze(1))   
                 
                 # Code semantic loss.
-                code_reconst = G(x_identic_psnt.squeeze(1), s_src, None)
-                g_loss_cd = F.l1_loss(code_real, code_reconst)
+                code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
+                g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = g_loss_id + hp.mu*g_loss_id_psnt + hp.lamb*g_loss_cd
+                g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
                 g_loss.backward()
                 opt.step()
 
             loss = {}
-            loss['G/loss_id'] = g_loss_id.item()
-            loss['G/loss_id_psnt'] = g_loss_id_psnt.item()
+            loss['G/loss_spec'] = g_loss_spec.item()
+            loss['G/loss_spec_psnt'] = g_loss_spec_psnt.item()
             loss['G/loss_cd'] = g_loss_cd.item()
             
             # lerp smooth running loss
@@ -205,18 +193,18 @@ def train(args):
 
             with torch.no_grad():
                 # Identity mapping loss
-                x_identic, x_identic_psnt, code_real = G(x_src, s_src, s_src)
-                g_loss_id = F.mse_loss(x_src, x_identic.squeeze(1))   
-                g_loss_id_psnt = F.mse_loss(x_src, x_identic_psnt.squeeze(1))   
+                x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
+                g_loss_spec = F.mse_loss(x_src, x_pred.squeeze(1))   
+                g_loss_spec_psnt = F.mse_loss(x_src, x_pred_psnt.squeeze(1))   
                 
                 # Code semantic loss.
-                code_reconst = G(x_identic_psnt.squeeze(1), s_src, None)
-                g_loss_cd = F.l1_loss(code_real, code_reconst)
+                code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
+                g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = g_loss_id + hp.mu*g_loss_id_psnt + hp.lamb*g_loss_cd
+                g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
 
-            valid_losses['G/loss_id'].append(g_loss_id.item())
-            valid_losses['G/loss_id_psnt'].append(g_loss_id_psnt.item())
+            valid_losses['G/loss_spec'].append(g_loss_spec.item())
+            valid_losses['G/loss_spec_psnt'].append(g_loss_spec_psnt.item())
             valid_losses['G/loss_cd'].append(g_loss_cd.item())
             valid_losses['G/loss'].append(g_loss.item())
             mb.child.comment = f"loss = {float(g_loss):6.5f}"
