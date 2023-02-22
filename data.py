@@ -47,7 +47,7 @@ class AutoVCDataset(data.Dataset):
         pth = self.paths[index]
         if pth.suffix == '.pt': mspec = torch.load(str(pth)) # (N, n_mels)
         else: 
-            x, fs = librosa.load(pth, sr=hp.sample_rate)
+            x, fs = librosa.load(pth, sr=hp.sampling_rate)
             mspec = get_mspec_from_array(x=x, input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
         mspec, y = self.random_crop(mspec)
         spk_id = pth.parent.stem

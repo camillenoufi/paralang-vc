@@ -30,5 +30,10 @@ class hp:
     mel_shift = None
     mel_scale = None
 
+    # mel spec resolution / time steps applied to other conditioning variables
     fft_length = 1024
     hop_length = 256
+
+    # dimensions of one-hot conditioning vectors
+    f0_dim = 256
+    amp_dim = 256

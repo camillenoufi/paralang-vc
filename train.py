@@ -26,7 +26,7 @@ def train(args):
     out_path = Path(hp.output_path)
     os.makedirs(out_path, exist_ok=True) # Make output directory
 
-    device = torch.device(hp.device)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') #also can manually set in hp.py
 
     # For now, no precomputed spectrograms
     if args.mel_path is None:
@@ -244,8 +244,6 @@ if __name__ == '__main__':
                         help='use fp16 in training')
     parser.add_argument('--mel_path', required=False, default=None, action='store',
                         help='path to precomputed spectrograms. Compute them on the fly if not.')
-    parser.add_argument('--lj_path', required=False, default=None,
-                        help="Add LJSpeech dataset")
 
     args = parser.parse_args()
     train(args)
