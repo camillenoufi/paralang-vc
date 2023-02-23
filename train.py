@@ -73,6 +73,7 @@ def train(args):
 
         for i, uttr_pth in enumerate(sample_uttrs):
             # mb.child.comment = f"processing speaker {spk_folder.stem} ({i} of {len(sample_uttrs)})"
+            print(f"processing speaker {spk_folder.stem} ({i} of {len(sample_uttrs)})")
             mel = sse.melspec_from_file(uttr_pth).to(device)
             if str(uttr_pth).endswith('.pt'): 
                 raise NotImplementedError(("If spectrograms are not precomputed, please do not use pre-computed mel-spectrograms in args."))
@@ -94,9 +95,8 @@ def train(args):
     test_dl = get_loader(test_files, spk_embs, hp.len_crop, hp.bs, 
                         shuffle=False, shift=hp.mel_shift, scale=hp.mel_scale)
 
-    print(list(train_dl))
-    for i, (x_src, s_src) in enumerate(train_dl):
-        print(i, x_src, s_src)
+    print(f'  Num Train samples: {len(train_files)}')
+    print(f'  Num Test samples: {len(test_files)}')
 
     print("[LOGGING] Setting up logger")
     writer = tensorboard.writer.SummaryWriter(out_path)
@@ -126,33 +126,37 @@ def train(args):
     iter = 0
     # mb = master_bar(range(n_epochs))
     for epoch in range(n_epochs):
-
+        print(f'--------------- Epoch {epoch}--------------------')
         G.train()
         # pb = progress_bar(enumerate(train_dl), total=len(train_dl), parent=mb)
         for i, (x_src, x_tgt, s_src, f0_src, amp_src) in enumerate(train_dl):
             x_src = x_src.to(device)
             x_tgt = x_tgt.to(device)
             s_src = s_src.to(device)
-            f0_src = f0_src.to(device)
-            amp_src = amp_src.to(device)
+            f0_src = f0_src[0].to(device) #0 is 1-hot vec, 1 is index of 1.0 location in vec
+            amp_src = amp_src[0].to(device)
+
+            # print(x_src.shape, x_tgt.shape, s_src.shape, f0_src.shape, amp_src.shape)
+            # yeilds: torch.Size([BS, 128, 80]) torch.Size([BS, 128, 80]) torch.Size([BS, 256]) torch.Size([BS, 128, 257]) torch.Size([BS, 128, 256])
             opt.zero_grad()
 
             # fp16 enable
             if args.fp16:
-                with autocast():
-                    # Conversion mapping loss
-                    x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
-                    g_loss_spec = F.mse_loss(x_tgt, x_pred.squeeze(1))   
-                    g_loss_spec_psnt = F.mse_loss(x_tgt, x_pred_psnt.squeeze(1))   
+              pass
+                # with autocast():
+                #     # Conversion mapping loss
+                #     x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
+                #     g_loss_spec = F.mse_loss(x_tgt, x_pred.squeeze(1))   
+                #     g_loss_spec_psnt = F.mse_loss(x_tgt, x_pred_psnt.squeeze(1))   
                     
-                    # Code semantic loss.
-                    code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
-                    g_loss_cd = F.l1_loss(code_src, code_pred)
+                #     # Code semantic loss.
+                #     code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
+                #     g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                    g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
-                scaler.scale(g_loss).backward()
-                scaler.step(opt)
-                scaler.update()
+                #     g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
+                # scaler.scale(g_loss).backward()
+                # scaler.step(opt)
+                # scaler.update()
             else:
                 # Conversion mapping loss
                 x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
@@ -175,6 +179,7 @@ def train(args):
             # lerp smooth running loss
             running_loss = running_loss + 0.1*(float(g_loss) - running_loss)
             # mb.child.comment = f"loss = {float(running_loss):6.5f}"
+            print(f"loss = {float(running_loss):6.5f}")
 
             if iter % hp.print_log_interval == 0:
                 et = time.time() - start_time
@@ -183,6 +188,8 @@ def train(args):
                 for tag in keys:
                     log += ", {}: {:.4f}".format(tag, loss[tag])
                 # mb.write(log)
+                print(log)
+                
             
             if iter % hp.tb_log_interval == 0:
                 for tag in keys: writer.add_scalar(tag, loss[tag], iter)
@@ -194,13 +201,17 @@ def train(args):
                 break
         
         # mb.write(f"[TRAIN] epoch {epoch} completed. Beginning eval.")
+        print(f"[TRAIN] epoch {epoch} completed. Beginning eval.")
         G.eval()
         # pb = progress_bar(enumerate(test_dl), total=len(test_dl), parent=mb)
         valid_losses = {tag: [] for tag in keys}
         valid_losses['G/loss'] = []
-        for i, (x_src, s_src) in enumerate(test_dl):
+        for i, (x_src, x_tgt, s_src, f0_src, amp_src) in enumerate(test_dl):
             x_src = x_src.to(device)
+            x_tgt = x_tgt.to(device)
             s_src = s_src.to(device)
+            f0_src = f0_src[0].to(device) #0 is 1-hot vec, 1 is index of 1.0 location in vec
+            amp_src = amp_src[0].to(device)
 
             with torch.no_grad():
                 # Identity mapping loss
@@ -224,6 +235,7 @@ def train(args):
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)
         pst = [f"{k}: {valid_losses[k]:5.4f}" for k in valid_losses.keys()]
         # mb.write(f"[TRAIN] epoch {epoch} eval metrics: " + '\t'.join(pst))
+        print(f"[TRAIN] epoch {epoch} eval metrics: " + '\t'.join(pst))
 
         if iter >= hp.n_iters: break
     

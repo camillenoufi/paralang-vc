@@ -89,7 +89,7 @@ class Decoder(nn.Module):
     def __init__(self, dim_neck, dim_emb, dim_pitch, dim_amp, dim_pre):
         super(Decoder, self).__init__()
         
-        self.lstm1 = nn.LSTM(dim_neck*2+dim_emb+(dim_pitch+1)+(dim_amp+1), dim_pre, 1, batch_first=True)
+        self.lstm1 = nn.LSTM(dim_neck*2+dim_emb+(dim_pitch+1)+(dim_amp), dim_pre, 1, batch_first=True)
         
         convolutions = []
         for i in range(3):

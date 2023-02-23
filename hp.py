@@ -4,9 +4,6 @@ class hp:
     data_root = '../../data/cleaned'
     n_train_speakers = 20
     n_test_speakers = 2 # these are the zero-shot speakers
-    data_root = '../../data/cleaned'
-    n_train_speakers = 17
-    n_test_speakers = 3 # these are the zero-shot speakers
     sampling_rate = 16000
 
     # speaker embedding settings
@@ -14,11 +11,12 @@ class hp:
     speaker_embedding_dir = '../../data/sse_embeddings/'
 
     # train settings
-    output_path = './outputs/run1/'
+    output_path = './outputs/test_run_022323/'
     device = 'cpu'
     len_crop = 128
-    bs = 4 # 2x that of paper
-    n_iters = 100000 #2300000 # much greater than the 100k in the paper
+    # changed batch size from 4 to 1
+    bs = 4
+    n_iters = 1000 #2300000 # much greater than the 100k in the paper
     lamb = 1
     mu = 1
     tb_log_interval = 10
