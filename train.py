@@ -16,7 +16,7 @@ from fastprogress import master_bar, progress_bar
 from torch.nn import utils
 from torch.utils import tensorboard
 
-from data import AutoVCDataset, get_loader
+from data import AutoVCDataset, get_loader, precompute_sse
 from hp import hp
 from model_vc import Generator
 from plot_utils import plot_spec
@@ -44,6 +44,11 @@ def train(args):
                 spk_folders.append(path)
     print(f"[DATA] Found a total of {len(spk_folders)} speakers")
 
+    # Getting embeddings:
+    print("[SPEAKER EMBEDDING] Precomputing/identifying speaker embeddings")
+    precompute_sse(spk_folders, device)
+    spk_embs_root = Path(hp.speaker_embedding_dir)
+
     # Gather training / testing paths.
     random.seed(hp.seed)
     train_spk_folders = sorted(random.sample(spk_folders, k=hp.n_train_speakers))
@@ -55,45 +60,10 @@ def train(args):
     print(f"[DATA] Split into {len(train_spk_folders)} train speakers ({len(train_files)} files)")
     print(f"[DATA] and {len(test_spk_folders)} test speakers ({len(test_files)} files)")
 
-    # Getting embeddings:
-    sse = torch.hub.load('RF5/simple-speaker-embedding', 'gru_embedder').to(device)
-    sse.eval()
-
-    # mb = master_bar(spk_folders)
-    spk_out_path = Path(hp.speaker_embedding_dir)
-    spk_embs = {}
-    os.makedirs(spk_out_path, exist_ok=True)
-    print("[SPEAKER EMBEDDING] Gathering speaker embeddings")
-    for spk_folder in spk_folders:
-        random.seed(hp.seed)
-        sample_uttrs = random.sample(list(spk_folder.iterdir()), k=hp.n_uttr_per_spk_embedding)
-        embs = []
-        if (spk_out_path/f"{spk_folder.stem}_sse_emb.pt").is_file(): 
-            spk_embs[spk_folder.stem] = torch.load(spk_out_path/f"{spk_folder.stem}_sse_emb.pt")
-            continue
-
-        for i, uttr_pth in enumerate(sample_uttrs):
-            # mb.child.comment = f"processing speaker {spk_folder.stem} ({i} of {len(sample_uttrs)})"
-            print(f"processing speaker {spk_folder.stem} ({i} of {len(sample_uttrs)})")
-            mel = sse.melspec_from_file(uttr_pth).to(device)
-            if str(uttr_pth).endswith('.pt'): 
-                raise NotImplementedError(("If spectrograms are not precomputed, please do not use pre-computed mel-spectrograms in args."))
-            with torch.no_grad():
-                embedding = sse(mel[None])[0]
-            embs.append(embedding.cpu())
-        
-        emb = torch.stack(embs, dim=0)
-        emb = emb.mean(dim=0)
-        spk_embs[spk_folder.stem] = emb
-        torch.save(emb, spk_out_path/f"{spk_folder.stem}_sse_emb.pt")
-
-    del sse
-    torch.cuda.empty_cache()
-
     print("[DATA] Constructing final dataloaders")
-    train_dl = get_loader(train_files, spk_embs, hp.len_crop, hp.bs, 
+    train_dl = get_loader(train_files, spk_embs_root, hp.len_crop, hp.bs, 
                         shuffle=True, shift=hp.mel_shift, scale=hp.mel_scale)
-    test_dl = get_loader(test_files, spk_embs, hp.len_crop, hp.bs, 
+    test_dl = get_loader(test_files, spk_embs_root, hp.len_crop, hp.bs, 
                         shuffle=False, shift=hp.mel_shift, scale=hp.mel_scale)
 
     print(f'  Num Train samples: {len(train_files)}')
@@ -104,8 +74,7 @@ def train(args):
     keys = ['G/loss_spec','G/loss_spec_psnt','G/loss_cd']
 
     print("[MODEL] Setting up model")
-    # Generator init params: (dim_neck, dim_emb, dim_pre, dim_pitch, dim_amp, freq)
-    G = Generator(32, 256, 512, 256, 256, 32).to(device)
+    G = Generator(hp.dim_neck, hp.sse_dim, hp.dim_pre, hp.f0_dim, hp.amp_dim, hp.freq).to(device)
     opt = torch.optim.Adam(G.parameters(), hp.lr)
     if args.fp16: 
         print("[TRAIN] Using fp16 training.")
@@ -130,7 +99,7 @@ def train(args):
     iter = 0
     # mb = master_bar(range(n_epochs))
     for epoch in range(n_epochs):
-        print(f'--------------- Epoch {epoch}--------------------')
+        print(f'--------------- Epoch {epoch} --------------------')
         G.train()
         # pb = progress_bar(enumerate(train_dl), total=len(train_dl), parent=mb)
         for i, (x_src, x_tgt, s_src, f0_src, amp_src) in enumerate(train_dl):
