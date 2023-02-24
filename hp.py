@@ -16,7 +16,7 @@ class hp:
     len_crop = 128
     # changed batch size from 4 to 1
     bs = 4
-    n_iters = 1000 #2300000 # much greater than the 100k in the paper
+    n_iters = 750 #2300000 # much greater than the 100k in the paper
     lamb = 1
     mu = 1
     tb_log_interval = 10

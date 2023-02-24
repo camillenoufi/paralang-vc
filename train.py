@@ -19,6 +19,7 @@ from torch.utils import tensorboard
 from data import AutoVCDataset, get_loader
 from hp import hp
 from model_vc import Generator
+from plot_utils import plot_spec
 
 
 def train(args):
@@ -123,6 +124,9 @@ def train(args):
     start_time = time.time()
     running_loss = 0.0
     n_epochs = math.ceil(hp.n_iters / len(train_dl))
+    # if args.checkpoint is not None:
+    #   iter = ite
+    # else:
     iter = 0
     # mb = master_bar(range(n_epochs))
     for epoch in range(n_epochs):
@@ -230,14 +234,17 @@ def train(args):
             valid_losses['G/loss_cd'].append(g_loss_cd.item())
             valid_losses['G/loss'].append(g_loss.item())
             # mb.child.comment = f"loss = {float(g_loss):6.5f}"
+
+        plot_spec(x_src[0].to('cpu').detach().numpy(), f'M_speech_E{epoch}', out_path)
+        plot_spec(x_tgt[0].to('cpu').detach().numpy(), f'M_tgt_E{epoch}', out_path)
+        plot_spec(x_pred[0].to('cpu').detach().numpy(), f'M_pred_E{epoch}', out_path)
+        plot_spec(x_pred_psnt[0].to('cpu').detach().numpy(), f'M_PostNet_E{epoch}', out_path)    
         
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)
         pst = [f"{k}: {valid_losses[k]:5.4f}" for k in valid_losses.keys()]
         # mb.write(f"[TRAIN] epoch {epoch} eval metrics: " + '\t'.join(pst))
         print(f"[TRAIN] epoch {epoch} eval metrics: " + '\t'.join(pst))
-
-        if iter >= hp.n_iters: break
     
     print("[CLEANUP] Saving model")
     torch.save({
