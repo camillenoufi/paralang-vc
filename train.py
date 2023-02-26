@@ -15,11 +15,12 @@ from torch.cuda.amp import GradScaler, autocast
 from fastprogress import master_bar, progress_bar
 from torch.nn import utils
 from torch.utils import tensorboard
+import torchvision
 
 from data import AutoVCDataset, get_loader, precompute_sse
 from hp import hp
 from model_vc import Generator
-from plot_utils import plot_spec
+from plot_utils import plot_spec, spec_to_tensorboard
 
 
 def train(args):
@@ -204,10 +205,16 @@ def train(args):
             valid_losses['G/loss'].append(g_loss.item())
             # mb.child.comment = f"loss = {float(g_loss):6.5f}"
 
-        plot_spec(x_src[0].to('cpu').detach().numpy(), f'M_speech_E{epoch}', out_path)
-        plot_spec(x_tgt[0].to('cpu').detach().numpy(), f'M_tgt_E{epoch}', out_path)
-        plot_spec(x_pred[0].to('cpu').detach().numpy(), f'M_pred_E{epoch}', out_path)
-        plot_spec(x_pred_psnt[0].to('cpu').detach().numpy(), f'M_PostNet_E{epoch}', out_path)    
+        # plot_spec(x_src[0].to('cpu').detach().numpy(), f'M_speech_E{epoch}', out_path)
+        # plot_spec(x_tgt[0].to('cpu').detach().numpy(), f'M_tgt_E{epoch}', out_path)
+        # plot_spec(x_pred[0].to('cpu').detach().numpy(), f'M_pred_E{epoch}', out_path)
+        # plot_spec(x_pred_psnt[0].to('cpu').detach().numpy(), f'M_PostNet_E{epoch}', out_path)
+
+        # Add to tensorboard
+        writer.add_image(f'M_speech_E{epoch}', spec_to_tensorboard(x_src[0].to('cpu').detach().numpy()), epoch)
+        writer.add_image(f'M_tgt_E{epoch}', spec_to_tensorboard(x_tgt[0].to('cpu').detach().numpy()), epoch)
+        writer.add_image(f'M_pred_E{epoch}', spec_to_tensorboard(x_pred[0].to('cpu').detach().numpy()), epoch)
+        writer.add_image(f'M_PostNet_E{epoch}', spec_to_tensorboard(x_pred_psnt[0].to('cpu').detach().numpy()), epoch)
         
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)
