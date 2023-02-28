@@ -168,11 +168,19 @@ def train(args):
             if iter % hp.tb_log_interval == 0:
                 for tag in keys: writer.add_scalar(tag, loss[tag], iter)
                 writer.add_scalar('G/loss', g_loss.item(), iter)
+                # Plot, Save and Add Spectograms to tensorboard
+                mspec_dict = {'speech':x_src[0].to('cpu').detach().numpy(),
+                      'tEGG':x_tgt[0].to('cpu').detach().numpy(),
+                      'pred':x_pred[0].to('cpu').detach().numpy(),
+                      'postnet':x_pred_psnt[0].to('cpu').detach().numpy()}
+                image = spec_to_tensorboard(mspec_dict, f'E{epoch}', out_path)
+                writer.add_image(f'M_speech_E{epoch}_I{iter}', image, epoch)
             
             iter += 1
             if iter >= hp.n_iters:
                 print("[TRAIN] Training completed.")
                 break
+
         
         # mb.write(f"[TRAIN] epoch {epoch} completed. Beginning eval.")
         print(f"[TRAIN] epoch {epoch} completed. Beginning eval.")
@@ -204,17 +212,9 @@ def train(args):
             valid_losses['G/loss_cd'].append(g_loss_cd.item())
             valid_losses['G/loss'].append(g_loss.item())
             # mb.child.comment = f"loss = {float(g_loss):6.5f}"
-
-        # plot_spec(x_src[0].to('cpu').detach().numpy(), f'M_speech_E{epoch}', out_path)
-        # plot_spec(x_tgt[0].to('cpu').detach().numpy(), f'M_tgt_E{epoch}', out_path)
-        # plot_spec(x_pred[0].to('cpu').detach().numpy(), f'M_pred_E{epoch}', out_path)
-        # plot_spec(x_pred_psnt[0].to('cpu').detach().numpy(), f'M_PostNet_E{epoch}', out_path)
-
-        # Add to tensorboard
-        writer.add_image(f'M_speech_E{epoch}', spec_to_tensorboard(x_src[0].to('cpu').detach().numpy()), epoch)
-        writer.add_image(f'M_tgt_E{epoch}', spec_to_tensorboard(x_tgt[0].to('cpu').detach().numpy()), epoch)
-        writer.add_image(f'M_pred_E{epoch}', spec_to_tensorboard(x_pred[0].to('cpu').detach().numpy()), epoch)
-        writer.add_image(f'M_PostNet_E{epoch}', spec_to_tensorboard(x_pred_psnt[0].to('cpu').detach().numpy()), epoch)
+        
+        
+        # writer.add_image(f'M_speech_E{epoch}', image, epoch)
         
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)

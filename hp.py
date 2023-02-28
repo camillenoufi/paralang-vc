@@ -13,12 +13,12 @@ class hp:
     speaker_embedding_dir = '../../data/SSE/'
 
     # train settings
-    output_path = './outputs/test_run_022423/'
+    output_path = './outputs/test_run_022723_2/'
     device = 'cpu'
     len_crop = 128
     # changed batch size from 4 to 1
     bs = 4
-    n_iters = 1500 #2300000 # much greater than the 100k in the paper
+    n_iters = 10000 #2300000 # much greater than the 100k in the paper
     lamb = 1
     mu = 1
     tb_log_interval = 10
