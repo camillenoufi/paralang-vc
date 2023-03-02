@@ -21,6 +21,7 @@ from data import AutoVCDataset, get_loader, precompute_sse
 from hp import hp
 from model_vc import Generator
 from plot_utils import plot_spec, spec_to_tensorboard
+from utils import Vocoder, save_wavs
 
 
 def train(args):
@@ -89,6 +90,9 @@ def train(args):
         opt.load_state_dict(ckpt['opt_state_dict'])
         print(f"[CHECKPOINT] Loaded checkpoint starting from epoch {epoch} (iter {ite})",
                 f" with last known loss {ckpt['loss']:6.5f}")
+
+    if args.vocode:
+      vocode = Vocoder()
 
     print("[TRAIN] Beginning training")
     start_time = time.time()
@@ -174,7 +178,7 @@ def train(args):
                       'pred':x_pred[0].to('cpu').detach().numpy(),
                       'postnet':x_pred_psnt[0].to('cpu').detach().numpy()}
                 image = spec_to_tensorboard(mspec_dict, f'E{epoch}', out_path)
-                writer.add_image(f'M_speech_E{epoch}_I{iter}', image, epoch)
+                writer.add_image(f'G/MelSpec_E{epoch}_I{iter}', image, epoch)
             
             iter += 1
             if iter >= hp.n_iters:
@@ -214,7 +218,15 @@ def train(args):
             # mb.child.comment = f"loss = {float(g_loss):6.5f}"
         
         
-        # writer.add_image(f'M_speech_E{epoch}', image, epoch)
+        writer.add_image(f'valid/MelSpec_E{epoch}', image, epoch)
+        if args.vocode:
+          wavs_true = vocode(x_pred_psnt)
+          wavs_pred = vocode(x_pred_psnt)
+          writer.add_audio(f'valid/wavs_true_E{epoch}', wavs_true, epoch, sample_rate=hp.sampling_rate)
+          writer.add_audio(f'valid/wavs_pred_E{epoch}', wavs_pred, epoch, sample_rate=hp.sampling_rate)
+          save_wavs(wavs_true, os.path.join(out_path,'wavs_true_E{epoch}.wav'))
+          save_wavs(wavs_pred, os.path.join(out_path,'wavs_true_E{epoch}.wav'))
+
         
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)
@@ -239,6 +251,9 @@ if __name__ == '__main__':
                         help='use fp16 in training')
     parser.add_argument('--mel_path', required=False, default=None, action='store',
                         help='path to precomputed spectrograms. Compute them on the fly if not.')
+    parser.add_argument('--vocode', required=False, default=False, action='store',
+                        help='boolean flag to indicate if hifi-gan vocoder is envoked during train/test')
+
 
     args = parser.parse_args()
     train(args)
