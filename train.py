@@ -225,7 +225,7 @@ def train(args):
           writer.add_audio(f'valid/wavs_true_E{epoch}', wavs_true, epoch, sample_rate=hp.sampling_rate)
           writer.add_audio(f'valid/wavs_pred_E{epoch}', wavs_pred, epoch, sample_rate=hp.sampling_rate)
           save_wavs(wavs_true, os.path.join(out_path,'wavs_true_E{epoch}.wav'))
-          save_wavs(wavs_pred, os.path.join(out_path,'wavs_true_E{epoch}.wav'))
+          save_wavs(wavs_pred, os.path.join(out_path,'wavs_pred_E{epoch}.wav'))
 
         
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}

@@ -5,10 +5,10 @@ import numpy as np
 import soundfile as sf
 from scipy import signal
 from scipy.signal import get_window
-from librosa.filters import mel
 from numpy.random import RandomState
 import torch
 import librosa
+from librosa.filters import mel
 import argparse
 from hp import hp
 import math
@@ -36,8 +36,8 @@ def pySTFT(x, fft_length=1024, hop_length=256):
     result = np.fft.rfft(fft_window * result, n=fft_length).T
     return np.abs(result)
 
-mel_basis = mel(hp.sampling_rate, 1024, fmin=90, fmax=7600, n_mels=80).T # For wavenet vocoder
-mel_basis_hifi = mel(hp.sampling_rate, 1024, fmin=0, fmax=8000, n_mels=80).T
+mel_basis = mel(sr=hp.sampling_rate, n_fft=1024, fmin=90, fmax=7600, n_mels=80).T # For wavenet vocoder
+mel_basis_hifi = mel(sr=hp.sampling_rate, n_fft=1024, fmin=0, fmax=8000, n_mels=80).T
 min_level = np.exp(-100 / 20 * np.log(10))
 b, a = butter_highpass(30, hp.sampling_rate, order=5)
 
@@ -47,7 +47,7 @@ def get_mspec(fn, is_hifigan=True, return_waveform=False):
     x = x[:, 0]
     print(x.dtype, x.shape, fs)
 
-    x = librosa.resample(x, fs, hp.sampling_rate)
+    x = librosa.resample(y=x, orig_sr=fs, target_sr=hp.sampling_rate)
     # Remove drifting noise
     y = signal.filtfilt(b, a, x)
     # Ddd a little random noise for model roubstness
@@ -72,7 +72,7 @@ def get_mspec(fn, is_hifigan=True, return_waveform=False):
 def get_mspec_from_array(x, input_sr, is_hifigan=True, return_waveform=False):
     """ `x` must be a 1D numpy array corresponding to a waveform"""
     #print(x.dtype, x.shape, fs)
-    x = librosa.resample(x, input_sr, hp.sampling_rate)
+    x = librosa.resample(y=x, orig_sr=input_sr, target_sr=hp.sampling_rate)
     # Remove drifting noise
     y = signal.filtfilt(b, a, x)
     # Ddd a little random noise for model roubstness
