@@ -13,7 +13,8 @@ class hp:
     speaker_embedding_dir = '/scratch/cnoufi/TAVA/data/SSE/'
 
     # train settings
-    output_path = '/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/test_run_cm-matlab_030223_30kIters/'
+    output_path = '/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/test_run_030323/'
+    #'/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/test_run_cm-matlab_030223_30kIters/'
     device = 'cuda:0'
     len_crop = 128
     # changed batch size from 4 to 1
