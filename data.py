@@ -14,11 +14,12 @@ import random
        
 class AutoVCDataset(data.Dataset):
 
-    def __init__(self, paths, spk_embs_root, len_crop, scale=None, shift=None) -> None:
+    def __init__(self, paths, spk_embs_root, len_crop, scale=None, shift=None, transform=False) -> None:
         super().__init__()
         self.paths = paths
         self.spk_embs_root = spk_embs_root
         self.len_crop = len_crop
+        self.transform = transform
         # assert jitter % 32 == 0, "Jitter must be divisible by 32"
         # self.jitter_choices = list(range(0, jitter+1, 32))
 
@@ -44,13 +45,14 @@ class AutoVCDataset(data.Dataset):
     def __len__(self) -> int:
         return len(self.paths)
 
-    def __getitem__(self, index, transform=0):
+    def __getitem__(self, index):
         pth = self.paths[index]
         spk_id = pth.parent.stem
         if pth.suffix == '.wav':
           x, fs = librosa.load(pth, sr=hp.sampling_rate, mono=False)
-          if transform: # do augmentations to .wav files directly so they will propogate to mspecs and conditioning vars
+          if self.transform: # do augmentations to .wav files directly so they will propogate to mspecs and conditioning vars
             x = self.apply_transforms(x,fs)
+          
           # Get source, TEGG, and EGG spectrograms using the different channels in x
           mspec_src, x_src = get_mspec_from_array(x=x[0, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
           mspec_tegg, x_tegg = get_mspec_from_array(x=x[1, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
@@ -96,7 +98,7 @@ class AutoVCDataset(data.Dataset):
         return mspec_src, mspec_tegg, mspec_egg, spk_emb, (f0_1hot, f0_i), (rmse_1hot,rmse_i)
 
     def apply_transforms(self, x, fs, transforms=None):
-      # TO-DO directly on .wav. (BOTH CHANNELS!)
+      # TO-DO directly on .wav. (ALL CHANNELS!)
       # scale / stretch / shrink by minor factor
       # boost / lower volume
       # time-reversal

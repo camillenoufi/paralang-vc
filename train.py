@@ -17,11 +17,11 @@ from torch.nn import utils
 from torch.utils import tensorboard
 import torchvision
 
-from data import AutoVCDataset, get_loader, precompute_sse
+from data import get_loader, precompute_sse
 from hp import hp
 from model_vc import Generator
-from plot_utils import plot_spec, spec_to_tensorboard
-from audio_utils import Vocoder, save_wavs, format_wavs
+from plot_utils import spec_to_tensorboard
+from audio_utils import Vocoder
 
 
 def train(args):
@@ -93,7 +93,7 @@ def train(args):
 
     if args.vocode:
       print("[MODEL] Setting up neural vocoder.")
-      vocode = Vocoder()
+      vocode = Vocoder(out_path=hp.output_path, writer=writer)
 
     print("[TRAIN] Beginning training")
     start_time = time.time()
@@ -177,18 +177,11 @@ def train(args):
                 print(log)
             
             if iter % hp.media_log_interval == 0:
-                # Plot, Save and Add Spectograms to tensorboard
+                # Plot, Save and Add media to tensorboard
                 image = spec_to_tensorboard( (x_src[0], x_egg[0], x_pred_egg[0], x_tegg[0], x_pred_tegg[0], x_pred_psnt[0]), f'E{epoch}', out_path)
                 writer.add_image(f'G/MelSpec_E{epoch}_I{iter}', image, epoch)    
                 if args.vocode:
-                    wavs_true = vocode(x_src)
-                    wavs_pred = vocode(x_pred_psnt.squeeze(1))
-                    wavs = format_wavs(wavs_true, wavs_pred)
-                    for j,wav in enumerate(wavs):
-                        wav = vocode.resample(wav)
-                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_true', wav[0,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
-                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_pred', wav[1,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
-                        save_wavs(wav, os.path.join(out_path,f'wavs_E{epoch}_{j}.wav'))
+                    vocode(x_src, x_pred_psnt, epoch, i)
                     
             iter += 1
             if iter >= hp.n_iters:
@@ -233,14 +226,7 @@ def train(args):
             image = spec_to_tensorboard( (x_src[0], x_egg[0], x_pred_egg[0], x_tegg[0], x_pred_tegg[0], x_pred_psnt[0]), f'E{epoch}_v{i}', out_path)
             writer.add_image(f'valid/MelSpec_E{epoch}_{i}', image, epoch)
             if args.vocode:
-                    wavs_true = vocode(x_src)
-                    wavs_pred = vocode(x_pred_psnt.squeeze(1))
-                    wavs = format_wavs(wavs_true, wavs_pred)
-                    for j,wav in enumerate(wavs):
-                        wav = vocode.resample(wav)
-                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_true', wav[0,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
-                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_pred', wav[1,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
-                        save_wavs(wav, os.path.join(out_path,f'wavs_E{epoch}_{j}.wav'))
+                vocode(x_src, x_pred_psnt, epoch, i, valid=True)
 
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)
@@ -255,7 +241,7 @@ def train(args):
             'model_state_dict': G.state_dict(),
             'opt_state_dict': opt.state_dict(),
             'loss': valid_losses['G/loss']
-        }, out_path/'checkpoint_last.pth')
+        }, out_path/f'checkpoint_last_E{epoch}.pth')
     
     print("[CLEANUP] Saving model")
     torch.save({
