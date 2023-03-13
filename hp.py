@@ -14,11 +14,13 @@ class hp:
     speaker_embedding_dir = '/scratch/cnoufi/TAVA/data/SSE/'
 
     # train settings
-    output_path = '/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/test_run_031323'
-    #'/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/test_run_cm-matlab_030223_30kIters/'
+    run_dir = 'e1_v2_030723'
+        #Should have format: 
+        #   e{experiment code from spreadsheet}_v{version if applicable}_MMDDYYYY  
+        #   e.g.  e1_v2_030723
+    output_path = '/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/'
     device = 'cuda:0'
     len_crop = 128
-    # changed batch size from 4 to 1
     bs = 4
     n_iters = 100000 #2300000 # much greater than the 100k in the paper
     lamb = 1

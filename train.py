@@ -26,7 +26,7 @@ from audio_utils import Vocoder
 
 def train(args):
     print("[BACKEND] Setting up paths and training.")
-    out_path = Path(hp.output_path)
+    out_path = Path(os.path.join(hp.output_path, hp.run_dir))
     os.makedirs(out_path, exist_ok=True) # Make output directory
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu') #also can manually set in hp.py
