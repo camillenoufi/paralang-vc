@@ -38,8 +38,7 @@ class AutoVCDataset(data.Dataset):
             self.denorm_mel = denorm_mel
         else:
             self.norm_mel = identity
-            self.denorm_mel = identity
-        
+            self.denorm_mel = identity     
         
 
     def __len__(self) -> int:
@@ -63,16 +62,17 @@ class AutoVCDataset(data.Dataset):
         emb_pth = self.spk_embs_root/spk_id/f"{pth.stem}_sse_emb.pt"
         try:
             if emb_pth.is_file():
-              spk_emb = torch.load(emb_pth)
+              spk_emb = torch.load(emb_pth, map_location=torch.device('cpu'))
         except:
           spk_emb = torch.empty((1,hp.dim_emb))
           print('Embedding file not found. Embedding will be empty tensor')
+        
         #f0 track
         step_size = int(1e3*hp.hop_length/hp.sampling_rate) #in ms
         _, f0, _, _ = crepe.predict(x_src, fs, viterbi=True, step_size=step_size)
         f0 = self.f0_normalization(f0)
         #extract RMSE
-        rmse = librosa.feature.rms(x_src, frame_length=hp.fft_length, hop_length=hp.hop_length, center=True)[0]
+        rmse = librosa.feature.rms(y=x_src, frame_length=hp.fft_length, hop_length=hp.hop_length, center=True)[0]
         rmse = np.clip(rmse, 0, 1) #remove rmse outliers
         
         assert mspec_src.shape == mspec_tegg.shape
@@ -87,7 +87,13 @@ class AutoVCDataset(data.Dataset):
         f0_1hot, f0_i = self.quantize_f0_numpy(f0.detach().numpy())
         rmse_1hot, rmse_i = self.quantize_rmse_numpy(rmse.detach().numpy())
 
-        return mspec_src, mspec_tegg, mspec_egg, spk_emb, (torch.Tensor(f0_1hot), f0_i), (torch.Tensor(rmse_1hot), rmse_i)
+        #mconvert all to tensors
+        f0_1hot = torch.Tensor(f0_1hot)
+        f0_i = torch.Tensor(f0_i)
+        rmse_1hot = torch.Tensor(rmse_1hot)
+        rmse_i = torch.Tensor(rmse_i)
+
+        return mspec_src, mspec_tegg, mspec_egg, spk_emb, (f0_1hot, f0_i), (rmse_1hot,rmse_i)
 
     def apply_transforms(self, x, fs, transforms=None):
       # TO-DO directly on .wav. (BOTH CHANNELS!)
@@ -172,7 +178,7 @@ def get_loader(files, spk_embs_root, len_crop, batch_size=16,
                                   batch_size=batch_size,
                                   shuffle=shuffle,
                                   num_workers=num_workers,
-                                  drop_last=shuffle, pin_memory=shuffle) # set pin memory to True if training.
+                                  drop_last=shuffle, pin_memory=True) # set pin memory to True if training.
     return data_loader
 
 def precompute_sse(spk_folders, device='cpu'):
