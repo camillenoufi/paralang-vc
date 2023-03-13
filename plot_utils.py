@@ -12,26 +12,36 @@ def plot_spec(mspec_dict, title_str, out_path):
   #unpack
   speech = np.squeeze(mspec_dict['speech'])
   tEGG = np.squeeze(mspec_dict['tEGG'])
-  pred = np.squeeze(mspec_dict['pred'])
+  EGG = np.squeeze(mspec_dict['EGG'])
+  pred_EGG = np.squeeze(mspec_dict['pred_EGG'])
+  pred_tEGG = np.squeeze(mspec_dict['pred_tEGG'])
   postnet = np.squeeze(mspec_dict['postnet'])
   
-  fig, [[ax1, ax2],[ax3, ax4]] = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True, figsize=(16,12))
+  fig, [[ax1, ax2],[ax3, ax4], [ax5, ax6]] = plt.subplots(nrows=3, ncols=2, sharex=True, sharey=True, figsize=(16,12))
 
   img = librosa.display.specshow(speech, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax1)
   ax1.set(title='Speech')
   fig.colorbar(img, ax=ax1, format="%+2.f dB")
 
-  img = librosa.display.specshow(tEGG, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax2)
-  ax2.set(title='tEGG')
+  img = librosa.display.specshow(EGG, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax2)
+  ax2.set(title='EGG')
   fig.colorbar(img, ax=ax2, format="%+2.f dB")
 
-  img = librosa.display.specshow(pred, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax3)
-  ax3.set(title='Prediction')
+  img = librosa.display.specshow(tEGG, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax3)
+  ax3.set(title='tEGG')
   fig.colorbar(img, ax=ax3, format="%+2.f dB")
 
-  img = librosa.display.specshow(postnet, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax4)
-  ax4.set(title='PostNet')
+  img = librosa.display.specshow(pred_EGG, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax4)
+  ax4.set(title='EGG Prediction')
   fig.colorbar(img, ax=ax4, format="%+2.f dB")
+  
+  img = librosa.display.specshow(pred_tEGG, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax5)
+  ax5.set(title='tEGG Prediction')
+  fig.colorbar(img, ax=ax5, format="%+2.f dB")
+
+  img = librosa.display.specshow(postnet, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax6)
+  ax6.set(title='PostNet')
+  fig.colorbar(img, ax=ax6, format="%+2.f dB")
   
   fig.suptitle(title_str)
   savepath = os.path.join(out_path, title_str + '.png')

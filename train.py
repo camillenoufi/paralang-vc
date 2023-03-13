@@ -73,7 +73,7 @@ def train(args):
 
     print("[LOGGING] Setting up logger")
     writer = tensorboard.writer.SummaryWriter(out_path)
-    keys = ['G/loss_spec','G/loss_spec_psnt','G/loss_cd']
+    keys = ['G/loss_egg', 'G/loss_tegg', 'G/loss_psnt','G/loss_cd']
 
     print("[MODEL] Setting up model")
     G = Generator(hp.dim_neck, hp.sse_dim, hp.dim_pre, hp.f0_dim, hp.amp_dim, hp.freq).to(device)
@@ -107,9 +107,10 @@ def train(args):
         print(f'--------------- Epoch {epoch} --------------------')
         G.train()
         # pb = progress_bar(enumerate(train_dl), total=len(train_dl), parent=mb)
-        for i, (x_src, x_tgt, s_src, f0_src, amp_src) in enumerate(train_dl):
+        for i, (x_src, x_tegg, x_egg, s_src, f0_src, amp_src) in enumerate(train_dl):
             x_src = x_src.to(device)
-            x_tgt = x_tgt.to(device)
+            x_tegg = x_tegg.to(device)
+            x_egg = x_egg.to(device)
             s_src = s_src.to(device)
             f0_src = f0_src[0].to(device) #0 is 1-hot vec, 1 is index of 1.0 location in vec
             amp_src = amp_src[0].to(device)
@@ -137,21 +138,23 @@ def train(args):
                 # scaler.update()
             else:
                 # Conversion mapping loss
-                x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
-                g_loss_spec = F.mse_loss(x_tgt, x_pred.squeeze(1))   
-                g_loss_spec_psnt = F.mse_loss(x_tgt, x_pred_psnt.squeeze(1))   
+                x_pred_egg, x_pred_tegg, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
+                g_loss_egg = F.mse_loss(x_egg, x_pred_egg.squeeze(1))
+                g_loss_tegg = F.mse_loss(x_tegg, x_pred_tegg.squeeze(1))   
+                g_loss_psnt = F.mse_loss(x_tegg, x_pred_psnt.squeeze(1))   
                 
                 # Code semantic loss.
                 code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
                 g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
+                g_loss = g_loss_egg + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd
                 g_loss.backward()
                 opt.step()
 
             loss = {}
-            loss['G/loss_spec'] = g_loss_spec.item()
-            loss['G/loss_spec_psnt'] = g_loss_spec_psnt.item()
+            loss['G/loss_egg'] = g_loss_egg.item()
+            loss['G/loss_tegg'] = g_loss_tegg.item()
+            loss['G/loss_psnt'] = g_loss_psnt.item()
             loss['G/loss_cd'] = g_loss_cd.item()
             
             # lerp smooth running loss
@@ -173,10 +176,14 @@ def train(args):
                 for tag in keys: writer.add_scalar(tag, loss[tag], iter)
                 writer.add_scalar('G/loss', g_loss.item(), iter)
                 # Plot, Save and Add Spectograms to tensorboard
-                mspec_dict = {'speech':x_src[0].to('cpu').detach().numpy(),
-                      'tEGG':x_tgt[0].to('cpu').detach().numpy(),
-                      'pred':x_pred[0].to('cpu').detach().numpy(),
-                      'postnet':x_pred_psnt[0].to('cpu').detach().numpy()}
+                mspec_dict = {
+                  'speech':x_src[0].to('cpu').detach().numpy(),
+                  'EGG':x_egg[0].to('cpu').detach().numpy(),
+                  'pred_EGG':x_pred_egg[0].to('cpu').detach().numpy(),
+                  'tEGG':x_tegg[0].to('cpu').detach().numpy(),
+                  'pred_tEGG':x_pred_tegg[0].to('cpu').detach().numpy(),
+                  'postnet':x_pred_psnt[0].to('cpu').detach().numpy()
+                }
                 image = spec_to_tensorboard(mspec_dict, f'E{epoch}', out_path)
                 writer.add_image(f'G/MelSpec_E{epoch}_I{iter}', image, epoch)
             
@@ -192,27 +199,30 @@ def train(args):
         # pb = progress_bar(enumerate(test_dl), total=len(test_dl), parent=mb)
         valid_losses = {tag: [] for tag in keys}
         valid_losses['G/loss'] = []
-        for i, (x_src, x_tgt, s_src, f0_src, amp_src) in enumerate(test_dl):
+        for i, (x_src, x_tegg, x_egg, s_src, f0_src, amp_src) in enumerate(test_dl):
             x_src = x_src.to(device)
-            x_tgt = x_tgt.to(device)
+            x_tegg = x_tegg.to(device)
+            x_egg = x_egg.to(device)
             s_src = s_src.to(device)
             f0_src = f0_src[0].to(device) #0 is 1-hot vec, 1 is index of 1.0 location in vec
             amp_src = amp_src[0].to(device)
 
             with torch.no_grad():
-                # Identity mapping loss
-                x_pred, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
-                g_loss_spec = F.mse_loss(x_src, x_pred.squeeze(1))   
-                g_loss_spec_psnt = F.mse_loss(x_src, x_pred_psnt.squeeze(1))   
+                # Identity mapping loss - changed to conversion as well
+                x_pred_egg, x_pred_tegg, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src) 
+                g_loss_egg = F.mse_loss(x_egg, x_pred_egg.squeeze(1))
+                g_loss_tegg = F.mse_loss(x_tegg, x_pred_tegg.squeeze(1))   
+                g_loss_psnt = F.mse_loss(x_tegg, x_pred_psnt.squeeze(1))  
                 
                 # Code semantic loss.
                 code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
                 g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = g_loss_spec + hp.mu*g_loss_spec_psnt + hp.lamb*g_loss_cd
+                g_loss = g_loss_egg + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd
 
-            valid_losses['G/loss_spec'].append(g_loss_spec.item())
-            valid_losses['G/loss_spec_psnt'].append(g_loss_spec_psnt.item())
+            valid_losses['G/loss_egg'].append(g_loss_egg.item())
+            valid_losses['G/loss_tegg'].append(g_loss_tegg.item())
+            valid_losses['G/loss_psnt'].append(g_loss_psnt.item())
             valid_losses['G/loss_cd'].append(g_loss_cd.item())
             valid_losses['G/loss'].append(g_loss.item())
             # mb.child.comment = f"loss = {float(g_loss):6.5f}"

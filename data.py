@@ -52,9 +52,10 @@ class AutoVCDataset(data.Dataset):
           x, fs = librosa.load(pth, sr=hp.sampling_rate, mono=False)
           if transform: # do augmentations to .wav files directly so they will propogate to mspecs and conditioning vars
             x = self.apply_transforms(x,fs)
-          # Get both src and TEGG spectrograms using the different channels in x
+          # Get source, TEGG, and EGG spectrograms using the different channels in x
           mspec_src, x_src = get_mspec_from_array(x=x[0, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
-          mspec_trg, x_trg = get_mspec_from_array(x=x[1, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
+          mspec_tegg, x_tegg = get_mspec_from_array(x=x[1, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
+          mspec_egg, x_egg = get_mspec_from_array(x=x[2, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
         elif pth.suffix == '.pt': mspec = torch.load(str(pth)) # (N, n_mels), no additional transforms
         else: print('file type not supported')
         
@@ -74,17 +75,19 @@ class AutoVCDataset(data.Dataset):
         rmse = librosa.feature.rms(x_src, frame_length=hp.fft_length, hop_length=hp.hop_length, center=True)[0]
         rmse = np.clip(rmse, 0, 1) #remove rmse outliers
         
-        # random crop everything in the same way
-        assert mspec_src.shape == mspec_trg.shape
+        assert mspec_src.shape == mspec_tegg.shape
+        assert mspec_src.shape == mspec_egg.shape
         assert mspec_src.shape[0] == len(f0)
         assert mspec_src.shape[0] == len(rmse)
-        mspec_src, mspec_trg, f0, rmse = self.random_crop(mspec_src, mspec_trg, torch.Tensor(f0), torch.Tensor(rmse))
+
+        # random crop everything in the same way
+        mspec_src, mspec_tegg, mspec_egg, f0, rmse = self.random_crop(mspec_src, mspec_tegg, mspec_egg, torch.Tensor(f0), torch.Tensor(rmse))
 
         #one-hot encode conditioning vars
         f0_1hot, f0_i = self.quantize_f0_numpy(f0.detach().numpy())
         rmse_1hot, rmse_i = self.quantize_rmse_numpy(rmse.detach().numpy())
 
-        return mspec_src, mspec_trg, spk_emb, (torch.Tensor(f0_1hot), f0_i), (torch.Tensor(rmse_1hot), rmse_i)
+        return mspec_src, mspec_tegg, mspec_egg, spk_emb, (torch.Tensor(f0_1hot), f0_i), (torch.Tensor(rmse_1hot), rmse_i)
 
     def apply_transforms(self, x, fs, transforms=None):
       # TO-DO directly on .wav. (BOTH CHANNELS!)
@@ -94,7 +97,7 @@ class AutoVCDataset(data.Dataset):
       # simple chop / scramble
       return x
 
-    def random_crop(self, mspec_src, mspec_trg, f0, rmse):
+    def random_crop(self, mspec_src, mspec_tegg, mspec_egg, f0, rmse):
         #cprint(mspec.shape) 
         N, _ = mspec_src.shape # the same for both
         clen = self.len_crop
@@ -102,16 +105,18 @@ class AutoVCDataset(data.Dataset):
             # pad mspec, f0, and rmse
             n_pad = clen - N
             mspec_src = F.pad(mspec_src, (0, 0, 0, n_pad), value=mspec_src.min())
-            mspec_trg = F.pad(mspec_trg, (0, 0, 0, n_pad), value=mspec_trg.min())
+            mspec_tegg = F.pad(mspec_tegg, (0, 0, 0, n_pad), value=mspec_tegg.min())
+            mspec_egg = F.pad(mspec_egg, (0, 0, 0, n_pad), value=mspec_egg.min())
             f0 = F.pad(f0, (0, n_pad), value=f0.min())
             rmse = F.pad(rmse, (0, n_pad), value=rmse.min())
         elif N > clen:
             crop_start = random.randint(0, N - clen)
             mspec_src = mspec_src[crop_start:crop_start+clen]
-            mspec_trg = mspec_trg[crop_start:crop_start+clen]
+            mspec_tegg = mspec_tegg[crop_start:crop_start+clen]
+            mspec_egg = mspec_egg[crop_start:crop_start+clen]
             f0 = f0[crop_start:crop_start+clen]
             rmse = rmse[crop_start:crop_start+clen]
-        return mspec_src, mspec_trg, f0, rmse
+        return mspec_src, mspec_tegg, mspec_egg, f0, rmse
 
     def f0_normalization(self, f0):
         f0 = np.log(f0.astype(float).copy())
