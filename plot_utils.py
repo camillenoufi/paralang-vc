@@ -8,14 +8,12 @@ import os
 import io
 
 
-def plot_spec(mspec_dict, title_str, out_path):
-  #unpack
-  speech = np.squeeze(mspec_dict['speech'])
-  tEGG = np.squeeze(mspec_dict['tEGG'])
-  pred = np.squeeze(mspec_dict['pred'])
-  postnet = np.squeeze(mspec_dict['postnet'])
+def plot_spec(mspecs, title_str, out_path):
   
-  fig, [[ax1, ax2],[ax3, ax4]] = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True, figsize=(16,12))
+  mspecs = [np.transpose(np.squeeze(m.to('cpu').detach().numpy())) for m in mspecs]
+  (speech, tEGG, pred, postnet) = tuple(mspecs)
+
+  fig, [[ax1, ax2],[ax3, ax4]] = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True, figsize=(16,16))
 
   img = librosa.display.specshow(speech, hop_length=hp.hop_length, x_axis='time', y_axis='mel', ax=ax1)
   ax1.set(title='Speech')
@@ -40,8 +38,8 @@ def plot_spec(mspec_dict, title_str, out_path):
   return fig
 
 
-def spec_to_tensorboard(mspec_dict, title_str, out_path):
-  fig = plot_spec(mspec_dict, title_str, out_path)
+def spec_to_tensorboard(mspecs, title_str, out_path):
+  fig = plot_spec(mspecs, title_str, out_path)
   fig.canvas.draw()
   image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
   image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))

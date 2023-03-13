@@ -38,8 +38,7 @@ class AutoVCDataset(data.Dataset):
             self.denorm_mel = denorm_mel
         else:
             self.norm_mel = identity
-            self.denorm_mel = identity
-        
+            self.denorm_mel = identity     
         
 
     def __len__(self) -> int:

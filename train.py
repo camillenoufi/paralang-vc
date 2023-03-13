@@ -21,7 +21,7 @@ from data import AutoVCDataset, get_loader, precompute_sse
 from hp import hp
 from model_vc import Generator
 from plot_utils import plot_spec, spec_to_tensorboard
-from utils import Vocoder, save_wavs
+from audio_utils import Vocoder, save_wavs, format_wavs
 
 
 def train(args):
@@ -92,6 +92,7 @@ def train(args):
                 f" with last known loss {ckpt['loss']:6.5f}")
 
     if args.vocode:
+      print("[MODEL] Setting up neural vocoder.")
       vocode = Vocoder()
 
     print("[TRAIN] Beginning training")
@@ -115,7 +116,7 @@ def train(args):
             amp_src = amp_src[0].to(device)
 
             # print(x_src.shape, x_tgt.shape, s_src.shape, f0_src.shape, amp_src.shape)
-            # yeilds: torch.Size([BS, 128, 80]) torch.Size([BS, 128, 80]) torch.Size([BS, 256]) torch.Size([BS, 128, 257]) torch.Size([BS, 128, 256])
+            # yields: torch.Size([BS, 128, 80]) torch.Size([BS, 128, 80]) torch.Size([BS, 256]) torch.Size([BS, 128, 257]) torch.Size([BS, 128, 256])
             opt.zero_grad()
 
             # fp16 enable
@@ -159,6 +160,10 @@ def train(args):
             # mb.child.comment = f"loss = {float(running_loss):6.5f}"
             print(f"loss = {float(running_loss):6.5f}")
 
+            if iter % hp.tb_log_interval == 0:
+                for tag in keys: writer.add_scalar(tag, loss[tag], iter)
+                writer.add_scalar('G/loss', g_loss.item(), iter)
+
             if iter % hp.print_log_interval == 0:
                 et = time.time() - start_time
                 et = str(datetime.timedelta(seconds=et))[:-7]
@@ -167,19 +172,21 @@ def train(args):
                     log += ", {}: {:.4f}".format(tag, loss[tag])
                 # mb.write(log)
                 print(log)
-                
             
-            if iter % hp.tb_log_interval == 0:
-                for tag in keys: writer.add_scalar(tag, loss[tag], iter)
-                writer.add_scalar('G/loss', g_loss.item(), iter)
+            if iter % hp.media_log_interval == 0:
                 # Plot, Save and Add Spectograms to tensorboard
-                mspec_dict = {'speech':x_src[0].to('cpu').detach().numpy(),
-                      'tEGG':x_tgt[0].to('cpu').detach().numpy(),
-                      'pred':x_pred[0].to('cpu').detach().numpy(),
-                      'postnet':x_pred_psnt[0].to('cpu').detach().numpy()}
-                image = spec_to_tensorboard(mspec_dict, f'E{epoch}', out_path)
-                writer.add_image(f'G/MelSpec_E{epoch}_I{iter}', image, epoch)
-            
+                image = spec_to_tensorboard( (x_src[0], x_tgt[0], x_pred[0], x_pred_psnt[0]), f'E{epoch}', out_path)
+                writer.add_image(f'G/MelSpec_E{epoch}_I{iter}', image, epoch)    
+                if args.vocode:
+                    wavs_true = vocode(x_src)
+                    wavs_pred = vocode(x_pred_psnt.squeeze(1))
+                    wavs = format_wavs(wavs_true, wavs_pred)
+                    for j,wav in enumerate(wavs):
+                        wav = vocode.resample(wav)
+                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_true', wav[0,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
+                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_pred', wav[1,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
+                        save_wavs(wav, os.path.join(out_path,f'wavs_E{epoch}_{j}.wav'))
+                    
             iter += 1
             if iter >= hp.n_iters:
                 print("[TRAIN] Training completed.")
@@ -217,22 +224,32 @@ def train(args):
             valid_losses['G/loss'].append(g_loss.item())
             # mb.child.comment = f"loss = {float(g_loss):6.5f}"
         
-        
-        writer.add_image(f'valid/MelSpec_E{epoch}', image, epoch)
-        if args.vocode:
-          wavs_true = vocode(x_pred_psnt)
-          wavs_pred = vocode(x_pred_psnt)
-          writer.add_audio(f'valid/wavs_true_E{epoch}', wavs_true, epoch, sample_rate=hp.sampling_rate)
-          writer.add_audio(f'valid/wavs_pred_E{epoch}', wavs_pred, epoch, sample_rate=hp.sampling_rate)
-          save_wavs(wavs_true, os.path.join(out_path,'wavs_true_E{epoch}.wav'))
-          save_wavs(wavs_pred, os.path.join(out_path,'wavs_pred_E{epoch}.wav'))
+            image = spec_to_tensorboard( (x_src[0], x_tgt[0], x_pred[0], x_pred_psnt[0]), f'E{epoch}_v{i}', out_path)
+            writer.add_image(f'valid/MelSpec_E{epoch}_{i}', image, epoch)
+            if args.vocode:
+                    wavs_true = vocode(x_src)
+                    wavs_pred = vocode(x_pred_psnt.squeeze(1))
+                    wavs = format_wavs(wavs_true, wavs_pred)
+                    for j,wav in enumerate(wavs):
+                        wav = vocode.resample(wav)
+                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_true', wav[0,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
+                        writer.add_audio(f'valid/wavs_E{epoch}_{i}_pred', wav[1,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
+                        save_wavs(wav, os.path.join(out_path,f'wavs_E{epoch}_{j}.wav'))
 
-        
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)
         pst = [f"{k}: {valid_losses[k]:5.4f}" for k in valid_losses.keys()]
         # mb.write(f"[TRAIN] epoch {epoch} eval metrics: " + '\t'.join(pst))
         print(f"[TRAIN] epoch {epoch} eval metrics: " + '\t'.join(pst))
+
+        print("[EPOCH COMPLETE] Saving model")
+        torch.save({
+            'epoch': epoch,
+            'iter': iter,
+            'model_state_dict': G.state_dict(),
+            'opt_state_dict': opt.state_dict(),
+            'loss': valid_losses['G/loss']
+        }, out_path/'checkpoint_last.pth')
     
     print("[CLEANUP] Saving model")
     torch.save({
@@ -241,7 +258,7 @@ def train(args):
         'model_state_dict': G.state_dict(),
         'opt_state_dict': opt.state_dict(),
         'loss': valid_losses['G/loss']
-    }, out_path/'checkpoint_last.pth')
+    }, out_path/'checkpoint_final.pth')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='autovc trainer')
