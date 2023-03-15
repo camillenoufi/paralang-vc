@@ -6,6 +6,8 @@ import torch.nn.functional as F
 import torchaudio
 import torchaudio.functional as F
 import torchaudio.transforms as T
+import torchmetrics
+
 import librosa
 from hp import hp
 import numpy as np
@@ -18,6 +20,7 @@ class Vocoder(nn.Module):
     def __init__(self, out_path, writer):
         super(Vocoder, self).__init__()
         self.vocoder = sb.pretrained.HIFIGAN.from_hparams(source="speechbrain/tts-hifigan-ljspeech")
+        self.SNR = torchmetrics.SignalNoiseRatio()
         # self.resampler = torchaudio.transforms.Resample(hp.sampling_rate, hp.original_sr)
         self.writer = writer
         self.out_path = out_path
@@ -60,6 +63,11 @@ class Vocoder(nn.Module):
     
     # def resample(self,wav):
     #   return self.resampler(wav)
+
+    def signal2noise(self, preds, targets):
+       preds = torch.transpose(self.forward(preds), 0, 1)
+       targets = torch.transpose(self.forward(targets), 0, 1)
+       return self.SNR(preds, targets)
 
 
 

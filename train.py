@@ -15,7 +15,7 @@ from torch.cuda.amp import GradScaler, autocast
 from fastprogress import master_bar, progress_bar
 from torch.nn import utils
 from torch.utils import tensorboard
-import torchvision
+import torchmetrics
 
 from data import get_loader, precompute_sse
 from hp import hp
@@ -142,13 +142,14 @@ def train(args):
                 x_pred_egg, x_pred_tegg, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src)
                 g_loss_egg = F.mse_loss(x_egg, x_pred_egg.squeeze(1))
                 g_loss_tegg = F.mse_loss(x_tegg, x_pred_tegg.squeeze(1))   
-                g_loss_psnt = F.mse_loss(x_tegg, x_pred_psnt.squeeze(1))   
+                g_loss_psnt = F.mse_loss(x_tegg, x_pred_psnt.squeeze(1))
+                g_loss_snr = vocoder.signal2noise(x_pred_egg, x_egg)   
                 
                 # Code semantic loss.
                 code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
                 g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = g_loss_egg + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd
+                g_loss = hp.alpha*g_loss_egg + hp.beta*g_loss_snr + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd + g_loss_snr
                 g_loss.backward()
                 opt.step()
 
@@ -208,13 +209,14 @@ def train(args):
                 x_pred_egg, x_pred_tegg, x_pred_psnt, code_src = G(x_src, f0_src, amp_src, s_src, s_src) 
                 g_loss_egg = F.mse_loss(x_egg, x_pred_egg.squeeze(1))
                 g_loss_tegg = F.mse_loss(x_tegg, x_pred_tegg.squeeze(1))   
-                g_loss_psnt = F.mse_loss(x_tegg, x_pred_psnt.squeeze(1))  
+                g_loss_psnt = F.mse_loss(x_tegg, x_pred_psnt.squeeze(1))
+                g_loss_snr = vocoder.signal2noise(x_pred_egg, x_egg)  
                 
                 # Code semantic loss.
                 code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
                 g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = g_loss_egg + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd
+                g_loss = hp.alpha*g_loss_egg + hp.beta*g_loss_snr + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd + hp.alpha*g_loss_snr
 
             valid_losses['G/loss_egg'].append(g_loss_egg.item())
             valid_losses['G/loss_tegg'].append(g_loss_tegg.item())

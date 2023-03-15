@@ -3,7 +3,7 @@ from torch._C import _dispatch_has_computed_kernel_for_dispatch_key
 
 class hp:
 
-    data_root = '/scratch/cnoufi/TAVA/data/audio-multichannel'
+    data_root = '/usr/ccrma/media/projects/jordan/Datasets/TAVA/audio-multichannel' #or /scratch/ folder of current machine if data lives there as well.
     n_train_speakers = 30
     n_test_speakers = 3 # these are the zero-shot speakers
     sampling_rate = 16000
@@ -22,10 +22,15 @@ class hp:
     device = 'cuda:0'
     len_crop = 128
     bs = 4
-    n_iters = 25000 #2300000 # much greater than the 100k in the paper
-    lamb = 1
-    mu = 1
-    gamma = 1
+    n_iters = 30000 #2300000 # much greater than the 100k in the paper
+    
+    alpha = 1 #EGG melspec loss weight
+    beta = 1 #EGG SNR loss weight
+    lamb = 1 #postnet SNR loss weight
+    mu = 1 #tEGG SNR loss weight
+    gamma = 1 #EGG bottleneck code loss weight
+
+
     tb_log_interval = 10
     print_log_interval = 100
     media_log_interval = 250

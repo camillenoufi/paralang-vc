@@ -104,7 +104,7 @@ class AutoVCDataset(data.Dataset):
         m, x = get_mspec_from_array(x, input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
         return m, x
     
-    def apply_transforms(self, x, fs, transforms=None):
+    def apply_transforms(self, x):
       # TO-DO directly on .wav. (ALL CHANNELS!)
       # scale / stretch / shrink by minor factor
       # boost / lower volume
@@ -190,6 +190,15 @@ def get_loader(files, spk_embs_root, len_crop, batch_size=16,
                 num_workers=0, shuffle=False, scale=None, shift=None): # had to change num_workers to 0
     """Build and return a data loader."""
     dataset = AutoVCDataset(files, spk_embs_root, len_crop, scale=scale, shift=shift)
+    '''
+    if transform_flag:
+        for t_str in transforms:
+            aug_dataset = AutoVCDataset(files, spk_embs_root, len_crop, scale=scale, shift=shift, transform=t)
+            test = aug_dataset[100]
+            print(len(aug_dataset))
+            dataset = torch.utils.data.ConcatDataset([dataset, aug_dataset])
+            print(dataset)
+    '''
     data_loader = data.DataLoader(dataset=dataset,
                                   batch_size=batch_size,
                                   shuffle=shuffle,
