@@ -4,11 +4,13 @@ torchaudio
 numpy
 scipy
 matplotlib
-
 librosa
 crepe
+ipython
+notebook
 matplotlib
 tensorflow
 speechbrain
+pandas
 pathlib
 fastprogress

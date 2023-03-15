@@ -1,6 +1,7 @@
 from torch.utils import data
 import torch.nn.functional as F
 import torch
+import torchaudio
 import numpy as np
 import crepe
 import librosa
@@ -20,6 +21,8 @@ class AutoVCDataset(data.Dataset):
         self.spk_embs_root = spk_embs_root
         self.len_crop = len_crop
         self.transform = transform
+        self.min_c = np.log2(50)
+        self.max_c = np.log2(1000)
         # assert jitter % 32 == 0, "Jitter must be divisible by 32"
         # self.jitter_choices = list(range(0, jitter+1, 32))
 
@@ -49,14 +52,14 @@ class AutoVCDataset(data.Dataset):
         pth = self.paths[index]
         spk_id = pth.parent.stem
         if pth.suffix == '.wav':
-          x, fs = librosa.load(pth, sr=hp.sampling_rate, mono=False)
+          x, fs = librosa.load(pth, mono=False) #resampling happens when converting to melspec
           if self.transform: # do augmentations to .wav files directly so they will propogate to mspecs and conditioning vars
             x = self.apply_transforms(x,fs)
           
           # Get source, TEGG, and EGG spectrograms using the different channels in x
-          mspec_src, x_src = get_mspec_from_array(x=x[0, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
-          mspec_tegg, x_tegg = get_mspec_from_array(x=x[1, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
-          mspec_egg, x_egg = get_mspec_from_array(x=x[2, :], input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
+          mspec_src, x_src = self.get_mspec(self, x[0, :], fs) # (N, n_mels)
+          mspec_tegg, _ = self.get_mspec(self, x[1, :], fs) # (N, n_mels)
+          mspec_egg, _ = self.get_mspec(self, x[2, :], fs) # (N, n_mels)
         elif pth.suffix == '.pt': mspec = torch.load(str(pth)) # (N, n_mels), no additional transforms
         else: print('file type not supported')
         
@@ -83,7 +86,7 @@ class AutoVCDataset(data.Dataset):
         assert mspec_src.shape[0] == len(rmse)
 
         # random crop everything in the same way
-        mspec_src, mspec_tegg, mspec_egg, f0, rmse = self.random_crop(mspec_src, mspec_tegg, mspec_egg, torch.Tensor(f0), torch.Tensor(rmse))
+        mspec_src, mspec_tegg, mspec_egg, f0, rmse = self.random_crop(mspec_src, mspec_tegg, mspec_egg, f0, torch.Tensor(rmse))
 
         #one-hot encode conditioning vars
         f0_1hot, f0_i = self.quantize_f0_numpy(f0.detach().numpy())
@@ -97,6 +100,10 @@ class AutoVCDataset(data.Dataset):
 
         return mspec_src, mspec_tegg, mspec_egg, spk_emb, (f0_1hot, f0_i), (rmse_1hot,rmse_i)
 
+    def get_mspec(self, x, fs):
+        m, x = get_mspec_from_array(x, input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
+        return m, x
+    
     def apply_transforms(self, x, fs, transforms=None):
       # TO-DO directly on .wav. (ALL CHANNELS!)
       # scale / stretch / shrink by minor factor
@@ -126,6 +133,13 @@ class AutoVCDataset(data.Dataset):
             rmse = rmse[crop_start:crop_start+clen]
         return mspec_src, mspec_tegg, mspec_egg, f0, rmse
 
+    def f0_cent_normalization(self, x):
+        c = np.log2(x+1e-6) - self.min_c
+        index_nonzero = (c > 0)
+        c[index_nonzero] = c[index_nonzero]/self.max_c
+        c[index_nonzero] = np.clip(c[index_nonzero], 0, 1)
+        return c
+    
     def f0_normalization(self, f0):
         f0 = np.log(f0.astype(float).copy())
         index_nonzero = (f0 > 0)
@@ -158,7 +172,7 @@ class AutoVCDataset(data.Dataset):
         enc[np.arange(len(x)), x.astype(np.int32)] = 1.0
         return enc, x.astype(np.int64)
 
-    def quantize_one_hot_torch(x, num_bins=256):
+    def quantize_f0_torch(x, num_bins=256):
         # x is normalized to be between 0 and 1
         B = x.size(0)
         x = x.view(-1).clone()

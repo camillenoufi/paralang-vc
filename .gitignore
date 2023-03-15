@@ -4,3 +4,4 @@ dev-clean-sse-embs/
 outputs/
 hifigan_checkpoints/
 **/__pycache__/
+.venv

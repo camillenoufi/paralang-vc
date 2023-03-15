@@ -253,8 +253,8 @@ class Generator(nn.Module):
         
         decoder_outputs = self.decoder(encoder_outputs) # predicted EGG
      
-        mel_outputs_vtnet = self.vtnet(decoder_outputs.transpose(2,1), c_org, amp_src)
-        mel_outputs_vtnet = decoder_outputs + mel_outputs_vtnet.transpose(2,1)
+        mel_outputs_vtnet = self.vtnet(decoder_outputs.transpose(2,1), c_org, amp_src) 
+        mel_outputs_vtnet = decoder_outputs + mel_outputs_vtnet.transpose(2,1) #highway nextwork --> aims for vtnet output to be the spectrogram "mask/filter" of the EGG
 
         mel_outputs_postnet = self.postnet(mel_outputs_vtnet.transpose(2, 1))
         mel_outputs_postnet = mel_outputs_vtnet + mel_outputs_postnet.transpose(2, 1)

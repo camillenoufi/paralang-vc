@@ -33,8 +33,8 @@ class Vocoder(nn.Module):
       wavs_pred = self.forward(x_tgt.squeeze(1))
       wavs = self.format_wavs(wavs_true, wavs_pred)
       for j,wav in enumerate(wavs):
-          self.writer.add_audio(f'valid/wavs_E{self.epoch}_{i}_true', wav[0,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
-          self.writer.add_audio(f'valid/wavs_E{self.epoch}_{i}_pred', wav[1,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
+          self.writer.add_audio(f'valid/wavs_E{epoch}_{i}_true', wav[0,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
+          self.writer.add_audio(f'valid/wavs_E{epoch}_{i}_pred', wav[1,:].unsqueeze(0), epoch, sample_rate=hp.sampling_rate)
           if valid:
              fn = os.path.join(self.out_path,f'wavs_E{epoch}_v{j}.wav')
           else:

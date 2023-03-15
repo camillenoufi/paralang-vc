@@ -93,7 +93,7 @@ def train(args):
 
     if args.vocode:
       print("[MODEL] Setting up neural vocoder.")
-      vocode = Vocoder(out_path=hp.output_path, writer=writer)
+      vocoder = Vocoder(out_path=hp.output_path, writer=writer)
 
     print("[TRAIN] Beginning training")
     start_time = time.time()
@@ -181,7 +181,7 @@ def train(args):
                 image = spec_to_tensorboard( (x_src[0], x_egg[0], x_pred_egg[0], x_tegg[0], x_pred_tegg[0], x_pred_psnt[0]), f'E{epoch}', out_path)
                 writer.add_image(f'G/MelSpec_E{epoch}_I{iter}', image, epoch)    
                 if args.vocode:
-                    vocode(x_src, x_pred_psnt, epoch, i)
+                    vocoder.vocode(x_src, x_pred_psnt, epoch, i)
                     
             iter += 1
             if iter >= hp.n_iters:
@@ -226,7 +226,7 @@ def train(args):
             image = spec_to_tensorboard( (x_src[0], x_egg[0], x_pred_egg[0], x_tegg[0], x_pred_tegg[0], x_pred_psnt[0]), f'E{epoch}_v{i}', out_path)
             writer.add_image(f'valid/MelSpec_E{epoch}_{i}', image, epoch)
             if args.vocode:
-                vocode(x_src, x_pred_psnt, epoch, i, valid=True)
+                vocoder.vocode(x_src, x_pred_psnt, epoch, i, valid=True)
 
         valid_losses = {k: np.mean(valid_losses[k]) for k in valid_losses.keys()}
         for tag in valid_losses.keys(): writer.add_scalar('valid/' + tag, valid_losses[tag], iter)

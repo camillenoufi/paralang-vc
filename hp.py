@@ -14,21 +14,21 @@ class hp:
     speaker_embedding_dir = '/scratch/cnoufi/TAVA/data/SSE/'
 
     # train settings
-    run_dir = 'e1_v2_030723'
+    run_dir = 'e2_v1_031323'
         #Should have format: 
         #   e{experiment code from spreadsheet}_v{version if applicable}_MMDDYYYY  
         #   e.g.  e1_v2_030723
-    output_path = '/scratch/cnoufi/TAVA/codebase/paralang-vc/outputs/'
+    output_path = '/usr/ccrma/media/projects/jordan/Datasets/TAVA/outputs'
     device = 'cuda:0'
     len_crop = 128
     bs = 4
-    n_iters = 100000 #2300000 # much greater than the 100k in the paper
+    n_iters = 25000 #2300000 # much greater than the 100k in the paper
     lamb = 1
     mu = 1
     gamma = 1
     tb_log_interval = 10
     print_log_interval = 100
-    media_log_interval = 1000
+    media_log_interval = 250
 
     lr = 1e-4 # according to github issues, no lr schedule is used
 
