@@ -14,20 +14,20 @@ class hp:
     speaker_embedding_dir = '/scratch/cnoufi/TAVA/data/SSE/'
 
     # train settings
-    run_dir = 'e2_v1_031323'
+    run_dir = 'e3_v1_040423'
         #Should have format: 
         #   e{experiment code from spreadsheet}_v{version if applicable}_MMDDYYYY  
         #   e.g.  e1_v2_030723
     output_path = '/usr/ccrma/media/projects/jordan/Datasets/TAVA/outputs'
     device = 'cuda:0'
     len_crop = 128
-    bs = 4
+    bs = 2
     n_iters = 30000 #2300000 # much greater than the 100k in the paper
     
     alpha = 1 #EGG melspec loss weight
     beta = 1 #EGG SNR loss weight
-    lamb = 1 #postnet SNR loss weight
-    mu = 1 #tEGG SNR loss weight
+    lamb = 1 #postnet loss weight
+    mu = 1 #tEGG loss weight
     gamma = 1 #EGG bottleneck code loss weight
 
 
@@ -54,3 +54,11 @@ class hp:
     dim_neck = 32
     dim_pre = 512
     freq = 32
+
+    #transform flags
+    transform_dict = {'speed':True,
+                      'gain':True,
+                      'scramble':True,
+                      'noise':True,
+                      'reverse':False
+                      }

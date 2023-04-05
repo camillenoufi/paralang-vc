@@ -64,7 +64,8 @@ def train(args):
 
     print("[DATA] Constructing final dataloaders")
     train_dl = get_loader(train_files, spk_embs_root, hp.len_crop, hp.bs, 
-                        shuffle=True, shift=hp.mel_shift, scale=hp.mel_scale)
+                        shuffle=True, shift=hp.mel_shift, scale=hp.mel_scale, 
+                        transform_dict=hp.transform_dict)
     test_dl = get_loader(test_files, spk_embs_root, hp.len_crop, hp.bs, 
                         shuffle=False, shift=hp.mel_shift, scale=hp.mel_scale)
 
@@ -76,7 +77,9 @@ def train(args):
     keys = ['G/loss_egg', 'G/loss_tegg', 'G/loss_psnt','G/loss_cd']
 
     print("[MODEL] Setting up model")
-    G = Generator(hp.dim_neck, hp.sse_dim, hp.dim_pre, hp.f0_dim, hp.amp_dim, hp.freq).to(device)
+    G = Generator(hp.dim_neck, hp.sse_dim, hp.dim_pre, hp.f0_dim, hp.amp_dim, hp.freq)
+    # G = torch.nn.DataParallel(G) #will use all available GPUs on machine.
+    G.to(device) 
     opt = torch.optim.Adam(G.parameters(), hp.lr)
     if args.fp16: 
         print("[TRAIN] Using fp16 training.")
@@ -116,8 +119,9 @@ def train(args):
             f0_src = f0_src[0].to(device) #0 is 1-hot vec, 1 is index of 1.0 location in vec
             amp_src = amp_src[0].to(device)
 
-            # print(x_src.shape, x_tgt.shape, s_src.shape, f0_src.shape, amp_src.shape)
-            # yields: torch.Size([BS, 128, 80]) torch.Size([BS, 128, 80]) torch.Size([BS, 256]) torch.Size([BS, 128, 257]) torch.Size([BS, 128, 256])
+            print(x_src.shape, x_tegg.shape, x_egg.shape, s_src.shape, f0_src.shape, amp_src.shape)
+
+            # yields: torch.Size([BS, 128, 80]) torch.Size([BS, 128, 80]) torch.Size([BS, 128, 80]) torch.Size([BS, 256]) torch.Size([BS, 128, 257]) torch.Size([BS, 128, 256])
             opt.zero_grad()
 
             # fp16 enable
@@ -149,7 +153,7 @@ def train(args):
                 code_pred = G(x_pred_psnt.squeeze(1), None, None, s_src, None)
                 g_loss_cd = F.l1_loss(code_src, code_pred)
 
-                g_loss = hp.alpha*g_loss_egg + hp.beta*g_loss_snr + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd + g_loss_snr
+                g_loss = hp.alpha*g_loss_egg + hp.beta*g_loss_snr + hp.mu*g_loss_tegg + hp.lamb*g_loss_psnt + hp.gamma*g_loss_cd
                 g_loss.backward()
                 opt.step()
 

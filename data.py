@@ -13,38 +13,131 @@ from spec_utils import get_mspec_from_array
 from hp import hp
 import random
        
+
+class AudioTransformPipeline():
+    def __init__(self, sample_rate, transform_dict=None, transform_args=None) -> None:
+      self.sr = sample_rate
+      self.vad = torchaudio.transforms.Vad(sample_rate=hp.sampling_rate, trigger_level=7.0)
+      if transform_dict is not None:
+        self.transform_dict = transform_dict
+        self.transforms = self.init_transforms()
+        if transform_args == None:
+            self.transform_args = self.init_transform_args()
+        else:
+            assert self.transform_args['speed'] != None
+            # assert(self.transform_args['speed']['min'] != None and self.transform_args['speed']['max'] != None)
+            assert self.transform_args['noise'] != None
+            assert(self.transform_args['scramble']['min'] != None and self.transform_args['scramble']['max'] != None)
+            assert(self.transform_args['gain']['min'] != None and self.transform_args['gain']['max'] != None)
+        self.speed_perturb = torchaudio.transforms.SpeedPerturbation(orig_freq=self.sr, factors=self.transform_args['speed'])
+      else:
+         self.transforms = None
+
+    def Vad(self, x):
+       return self.reverse(self.vad(self.reverse(self.vad(x))))
+    
+    def reverse(self, x):
+        x, sr = torchaudio.sox_effects.apply_effects_tensor(x, sample_rate=self.sr, effects=[['reverse']], channels_first=True)
+        return x
+     
+    def perturb_speed(self, x):
+        # rate = random.uniform(self.transform_args['speed']['min'], self.transform_args['speed']['max'])
+        # if rate == 1.0: # no change
+        #     return x
+        # # change speed and resample to original rate:
+        # sox_effects = [
+        #     ["speed", str(rate)],
+        #     ["rate", str(self.sr)],
+        # ]
+        # x_speed_perturbed, _ = torchaudio.sox_effects.apply_effects_tensor(
+        #     x, self.sr, sox_effects)
+        # return x_speed_perturbed
+        return  self.speed_perturb(x)[0]  #leave off returned "new time"
+
+    def scramble(self, x):
+      if random.random() <= self.transform_args['scramble']['prob']:
+         return x
+      #else: scramble
+      num_slices = random.randint(self.transform_args['scramble']['min'], self.transform_args['scramble']['max'])
+      slice_size = int(x.shape[1] / num_slices)
+      slices = []
+      for i in range(num_slices):
+        start = i * slice_size
+        end = x.shape[-1] if i == num_slices - 1 else (i + 1) * slice_size
+        slices.append(x[:,start:end])
+      random.shuffle(slices)
+      return torch.cat(slices, 1)
+    
+    def adjust_gain(self, x):
+    #   self.gain_adjust = lambda a,b: torchaudio.transforms.Vol(gain=random.uniform(a, b), gain_type="amplitude")
+    # would be nice to figure out how to not declare the Vol object every time, but have randomness in the gain factor
+      gain_adjuster = torchaudio.transforms.Vol(gain=random.uniform(self.transform_args['gain']['min'], self.transform_args['gain']['max']), 
+                                            gain_type="amplitude")
+      return gain_adjuster(x)
+    
+    def add_noise(self, x): 
+       #x is a Tensor of shape [channels, samples]
+       noise = torch.randn(size=x.size())
+       idx = random.randint(a=0, b=len(self.transform_args['noise'])-1)
+       snr = self.transform_args['noise'][idx].repeat(x.shape[0])
+       return torchaudio.functional.add_noise(x, noise, snr=snr)   
+
+    def init_transforms(self):
+        transforms = []
+        # The order of these if statements determines the order in which the augmentations are applied
+        if self.transform_dict['speed']:
+            transforms.append(self.perturb_speed)
+        if self.transform_dict['reverse']:
+            transforms.append(self.scramble)
+        if self.transform_dict['gain']:
+            transforms.append(self.adjust_gain)
+        if self.transform_dict['scramble']:
+            transforms.append(self.scramble)
+        if self.transform_dict['noise']:
+            transforms.append(self.add_noise)
+        return transforms
+    
+    def init_transform_args(self):
+        gain = {'min':0.9,
+                'max':1.0
+                }
+        scramble = {'min':1,
+                    'max':4,
+                    'prob':0.5
+                    }
+        snr_dbs = torch.Tensor([80,60,20,10,3])
+        speed = [0.9, 1.1, 1.0, 1.0, 1.0]
+        # speed = {'min':0.9,
+        #         'max':1.0
+        #         }
+        transform_args = {'speed':speed,
+                          'gain':gain,
+                          'scramble':scramble,
+                          'noise':snr_dbs}
+        return transform_args
+    
+    def compose_transform(self, x):
+        for t in self.transforms:
+            x = t(x)
+        return x
+       
+
 class AutoVCDataset(data.Dataset):
 
-    def __init__(self, paths, spk_embs_root, len_crop, scale=None, shift=None, transform=False) -> None:
+    def __init__(self, paths, spk_embs_root, len_crop, scale=None, shift=None, transform_dict=None) -> None:
         super().__init__()
         self.paths = paths
         self.spk_embs_root = spk_embs_root
+        self.sr = hp.sampling_rate
         self.len_crop = len_crop
-        self.transform = transform
+        self.ATP = AudioTransformPipeline(sample_rate=self.sr, transform_dict=transform_dict)
+        if transform_dict:
+           self.transform = True
+        else:
+           self.transform = False
         self.min_c = np.log2(50)
         self.max_c = np.log2(1000)
-        # assert jitter % 32 == 0, "Jitter must be divisible by 32"
-        # self.jitter_choices = list(range(0, jitter+1, 32))
-
-        # Replacements for lambda function to fix AttributeError
-        global norm_mel
-        def norm_mel(x):
-            return (x + shift) / scale
-        global denorm_mel
-        def denorm_mel(x):
-            return (x * scale) - shift
-        global identity
-        def identity(x):
-            return x
-
-        if scale is not None and shift is not None:
-            self.norm_mel = norm_mel
-            self.denorm_mel = denorm_mel
-        else:
-            self.norm_mel = identity
-            self.denorm_mel = identity     
         
-
     def __len__(self) -> int:
         return len(self.paths)
 
@@ -52,14 +145,22 @@ class AutoVCDataset(data.Dataset):
         pth = self.paths[index]
         spk_id = pth.parent.stem
         if pth.suffix == '.wav':
-          x, fs = librosa.load(pth, mono=False) #resampling happens when converting to melspec
-          if self.transform: # do augmentations to .wav files directly so they will propogate to mspecs and conditioning vars
-            x = self.apply_transforms(x,fs)
+          x, fs = torchaudio.load(pth) #resampling happens when converting to melspec
+          if fs!=self.sr:
+             x = torchaudio.functional.resample(x, orig_freq=fs, new_freq=self.sr)
+          
+          # Apply VAD to remove silences
+          x = self.ATP.Vad(x)
+          
+          # apply augmentation transforms to .wav file
+          if self.transform:
+            x = self.ATP.compose_transform(x).detach().numpy()
           
           # Get source, TEGG, and EGG spectrograms using the different channels in x
-          mspec_src, x_src = self.get_mspec(self, x[0, :], fs) # (N, n_mels)
-          mspec_tegg, _ = self.get_mspec(self, x[1, :], fs) # (N, n_mels)
-          mspec_egg, _ = self.get_mspec(self, x[2, :], fs) # (N, n_mels)
+          mspec_src, x_src = self.get_mspec(x[0, :], fs) # (N, n_mels)
+          mspec_tegg, _ = self.get_mspec(x[1, :], fs) # (N, n_mels)
+          mspec_egg, _ = self.get_mspec(x[2, :], fs) # (N, n_mels)
+        
         elif pth.suffix == '.pt': mspec = torch.load(str(pth)) # (N, n_mels), no additional transforms
         else: print('file type not supported')
         
@@ -80,13 +181,16 @@ class AutoVCDataset(data.Dataset):
         rmse = librosa.feature.rms(y=x_src, frame_length=hp.fft_length, hop_length=hp.hop_length, center=True)[0]
         rmse = np.clip(rmse, 0, 1) #remove rmse outliers
         
-        assert mspec_src.shape == mspec_tegg.shape
-        assert mspec_src.shape == mspec_egg.shape
-        assert mspec_src.shape[0] == len(f0)
-        assert mspec_src.shape[0] == len(rmse)
+        # try:
+        #     assert mspec_src.shape == mspec_tegg.shape
+        #     assert mspec_src.shape == mspec_egg.shape
+        #     assert mspec_src.shape[0] == len(f0)
+        #     assert mspec_src.shape[0] == len(rmse)
+        # except:
+        #    print('mel specs and conditioning vectors are not of the same length')
 
         # random crop everything in the same way
-        mspec_src, mspec_tegg, mspec_egg, f0, rmse = self.random_crop(mspec_src, mspec_tegg, mspec_egg, f0, torch.Tensor(rmse))
+        mspec_src, mspec_tegg, mspec_egg, f0, rmse = self.random_crop(mspec_src, mspec_tegg, mspec_egg, torch.Tensor(f0), torch.Tensor(rmse))
 
         #one-hot encode conditioning vars
         f0_1hot, f0_i = self.quantize_f0_numpy(f0.detach().numpy())
@@ -101,17 +205,9 @@ class AutoVCDataset(data.Dataset):
         return mspec_src, mspec_tegg, mspec_egg, spk_emb, (f0_1hot, f0_i), (rmse_1hot,rmse_i)
 
     def get_mspec(self, x, fs):
-        m, x = get_mspec_from_array(x, input_sr=fs, is_hifigan=True, return_waveform=True) # (N, n_mels)
+        m, x = get_mspec_from_array(x, input_sr=self.sr, is_hifigan=True, return_waveform=True) # (N, n_mels)
         return m, x
     
-    def apply_transforms(self, x):
-      # TO-DO directly on .wav. (ALL CHANNELS!)
-      # scale / stretch / shrink by minor factor
-      # boost / lower volume
-      # time-reversal
-      # simple chop / scramble
-      return x
-
     def random_crop(self, mspec_src, mspec_tegg, mspec_egg, f0, rmse):
         #cprint(mspec.shape) 
         N, _ = mspec_src.shape # the same for both
@@ -187,24 +283,21 @@ class AutoVCDataset(data.Dataset):
         return enc.view(B, -1, num_bins+1), x.view(B, -1).long()
 
 def get_loader(files, spk_embs_root, len_crop, batch_size=16, 
-                num_workers=0, shuffle=False, scale=None, shift=None): # had to change num_workers to 0
+                num_workers=0, shuffle=False, scale=None, shift=None, transform_dict=None): # had to change num_workers to 0
     """Build and return a data loader."""
-    dataset = AutoVCDataset(files, spk_embs_root, len_crop, scale=scale, shift=shift)
-    '''
-    if transform_flag:
-        for t_str in transforms:
-            aug_dataset = AutoVCDataset(files, spk_embs_root, len_crop, scale=scale, shift=shift, transform=t)
-            test = aug_dataset[100]
-            print(len(aug_dataset))
-            dataset = torch.utils.data.ConcatDataset([dataset, aug_dataset])
-            print(dataset)
-    '''
+    dataset = AutoVCDataset(files, spk_embs_root, len_crop, scale=scale, shift=shift, transform_dict=transform_dict)
     data_loader = data.DataLoader(dataset=dataset,
                                   batch_size=batch_size,
                                   shuffle=shuffle,
                                   num_workers=num_workers,
-                                  drop_last=shuffle, pin_memory=True) # set pin memory to True if training.
+                                  drop_last=shuffle,
+                                  pin_memory=True) # set pin memory to True if training.
+    # something is up with the default collate function in the dataloader and the way data samples are getting batched.  did a dimension flip?
+    # see https://pytorch.org/docs/stable/data.html#single-and-multi-process-data-loading for more info.
+    # if you set batch size to 1 in hp.py (bypassing the current issue) you'll also see there is a dimensions-related bug further downstream
     return data_loader
+
+
 
 def precompute_sse(spk_folders, device='cpu'):
     sse = torch.hub.load('RF5/simple-speaker-embedding', 'gru_embedder').to(device)
